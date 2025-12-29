@@ -1,0 +1,18 @@
+GWAS PREPROCESSING LOG
+======================================================================
+Date: 2025-12-20 12:45:33
+Input file: Dataset/DIAMANTE-SAS.sumstat.csv
+
+[12:44:55] Loading GWAS summary statistics...
+[12:45:12] Initial dataset loaded | SNPs remaining: 10,401,621
+[12:45:14] Removing rows with missing critical values...
+[12:45:17] Removed missing value rows | SNPs remaining: 10,401,548
+[12:45:17] Renaming columns for consistency...
+[12:45:28] Removed 1,548,378 ambiguous SNPs | SNPs remaining: 8,853,170
+[12:45:33] Removed 1,475,724 rare variants (MAF < 0.01) | SNPs remaining: 7,377,446
+[12:45:33] Retained 1,113 significant SNPs | SNPs remaining: 1,113
+[12:45:33] Removed 0 SNPs with |beta| > 5 | SNPs remaining: 1,113
+[12:45:33] Removed 0 duplicate entries | SNPs remaining: 1,113
+[12:45:33] Keeping all 1,113 SNPs | SNPs remaining: 1,113
+[12:45:33] Created PRS weight file: processed_data/prs_weights.txt
+[12:45:33] Saved cleaned dataset: processed_data/cleaned_gwas_summary_stats.csv

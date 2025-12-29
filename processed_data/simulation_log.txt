@@ -1,0 +1,10 @@
+2025-12-27 10:03:49,156 INFO: Loaded GWAS summary statistics with 1113 variants
+2025-12-27 10:03:49,229 INFO: Simulated genotypes shape: (5000, 200)
+2025-12-27 10:03:49,473 INFO: Saved simulated dataset to D:\Code_wid_pablo\Genome_T2D\T2D-genome-risk-prediction\processed_data\simulated_t2d_dataset.csv
+2025-12-27 10:03:49,713 INFO: Trained XGBoost model AUC: 0.9994
+2025-12-27 10:03:50,432 INFO: Model AUC: 0.9994
+2025-12-27 10:08:24,988 INFO: Loaded GWAS summary statistics with 1113 variants
+2025-12-27 10:08:25,037 INFO: Simulated genotypes shape: (5000, 200)
+2025-12-27 10:08:25,241 INFO: Saved simulated dataset to D:\Code_wid_pablo\Genome_T2D\T2D-genome-risk-prediction\processed_data\simulated_t2d_dataset.csv
+2025-12-27 10:08:25,408 INFO: Trained XGBoost model AUC: 0.9994
+2025-12-27 10:08:25,963 INFO: Model AUC: 0.9994
