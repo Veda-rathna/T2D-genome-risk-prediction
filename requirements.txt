@@ -1,19 +1,14 @@
-# Requirements for GWAS Preprocessing Pipeline
+# Dependencies for T2D Genome Risk Prediction Research Application
 # Install with: pip install -r requirements.txt
 
-# Core data processing
 pandas>=1.5.0
 numpy>=1.23.0
-
-# Visualization
-matplotlib>=3.6.0
-seaborn>=0.12.0
-
-# Machine Learning
+scipy>=1.9.0
 scikit-learn>=1.2.0
 xgboost>=1.7.0
 shap>=0.42.0
 joblib>=1.2.0
-
-# Optional but recommended
-scipy>=1.9.0
+streamlit>=1.30.0
+plotly>=5.18.0
+matplotlib>=3.6.0
+seaborn>=0.12.0
