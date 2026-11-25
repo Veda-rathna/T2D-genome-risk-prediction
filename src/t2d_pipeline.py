@@ -16,7 +16,8 @@ import joblib
 import numpy as np
 import pandas as pd
 import shap
-from sklearn.calibration import calibration_curve
+from sklearn.calibration import CalibratedClassifierCV, calibration_curve
+from sklearn.impute import SimpleImputer
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
@@ -27,6 +28,9 @@ from sklearn.metrics import (
     roc_curve,
 )
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from xgboost import XGBClassifier
 
 # Resolve paths relative to repository root regardless of current working directory
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -146,8 +150,65 @@ def get_artifact_status() -> dict[str, bool]:
     return {name: p.exists() for name, p in paths.items()}
 
 
+def _rebuild_hybrid_bundle(model_key: str) -> tuple[Any, Any]:
+    """Rebuild hybrid model & scaler locally if pickled artifacts fail across sklearn versions."""
+    sim_df, _ = load_simulated_cohort_summary()
+    X = sim_df[FEATURE_ORDER].copy()
+    y = sim_df["T2D_status"].astype(int).copy()
+
+    if model_key == "realistic":
+        rng = np.random.default_rng(42)
+        X_noisy = X.copy()
+        for col in FEATURE_ORDER:
+            if col != "family_history":
+                X_noisy[col] = X[col] + rng.normal(0, 0.1 * X[col].std(), size=len(X))
+        X_noisy["age"] = X_noisy["age"].clip(18, 90)
+        X_noisy["bmi"] = X_noisy["bmi"].clip(15, 50)
+        X_noisy["waist_cm"] = X_noisy["waist_cm"].clip(60, 140)
+        X_noisy["physical_activity"] = X_noisy["physical_activity"].clip(0, 7)
+
+        case_idx = np.where(y == 1)[0]
+        ctrl_idx = np.where(y == 0)[0]
+        n_cases = int(len(ctrl_idx) * 0.12 / 0.88)
+        sel_cases = rng.choice(case_idx, size=n_cases, replace=False)
+        sel = np.concatenate([ctrl_idx, sel_cases])
+        rng.shuffle(sel)
+        X_bal, y_bal = X_noisy.iloc[sel], y.iloc[sel]
+
+        X_train, _, y_train, _ = train_test_split(
+            X_bal, y_bal, test_size=0.2, random_state=42, stratify=y_bal
+        )
+        scaler = StandardScaler()
+        X_train_sc = scaler.fit_transform(X_train)
+        base = XGBClassifier(
+            n_estimators=100,
+            max_depth=3,
+            learning_rate=0.05,
+            min_child_weight=5,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            reg_alpha=1.0,
+            reg_lambda=2.0,
+            scale_pos_weight=7,
+            random_state=42,
+            eval_metric="logloss",
+        )
+        model = CalibratedClassifierCV(base, method="sigmoid", cv=5)
+        model.fit(X_train_sc, y_train)
+        return model, scaler
+
+    X_train, _, y_train, _ = train_test_split(
+        X, y, test_size=0.2, stratify=y, random_state=42
+    )
+    scaler = StandardScaler()
+    X_train_sc = scaler.fit_transform(X_train)
+    model = XGBClassifier(n_estimators=200, eval_metric="logloss", random_state=42)
+    model.fit(X_train_sc, y_train)
+    return model, scaler
+
+
 def load_model_bundle(model_key: str = "realistic") -> ModelBundle:
-    """Load the requested trained model and scaler and verify feature schema."""
+    """Load the requested trained model and scaler, rebuilding cleanly if pickle fails."""
     if model_key == "realistic":
         model_path = MODELS_DIR / "realistic_model.pkl"
         scaler_path = MODELS_DIR / "realistic_scaler.pkl"
@@ -168,6 +229,15 @@ def load_model_bundle(model_key: str = "realistic") -> ModelBundle:
 
     model = joblib.load(model_path)
     scaler = joblib.load(scaler_path)
+
+    # Smoke-test unpickled estimators against installed scikit-learn version
+    smoke_df = pd.DataFrame(
+        [[48, 27.5, 92.0, 0, 1, -8.66]], columns=FEATURE_ORDER
+    )
+    try:
+        _ = model.predict_proba(scaler.transform(smoke_df))
+    except Exception:
+        model, scaler = _rebuild_hybrid_bundle(model_key)
 
     scaler_features = list(getattr(scaler, "feature_names_in_", FEATURE_ORDER))
     if scaler_features != FEATURE_ORDER:
@@ -725,12 +795,62 @@ def load_pima_real_dataset() -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def _fit_pima_real_pipeline() -> Pipeline:
+    """Fit the real-data PIMA clinical XGBoost pipeline using the active sklearn version."""
+    df = load_pima_real_dataset()
+    X = df[PIMA_FEATURES].copy()
+    for col in PIMA_ZERO_MISSING_COLS:
+        X[col] = X[col].replace(0, np.nan)
+    y = df["Outcome"].astype(int)
+
+    X_train, _, y_train, _ = train_test_split(
+        X, y, test_size=0.2, stratify=y, random_state=42
+    )
+    pipeline = Pipeline(
+        [
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+            (
+                "clf",
+                XGBClassifier(
+                    n_estimators=120,
+                    max_depth=3,
+                    learning_rate=0.05,
+                    min_child_weight=3,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    reg_alpha=1.0,
+                    reg_lambda=2.0,
+                    random_state=42,
+                    eval_metric="logloss",
+                ),
+            ),
+        ]
+    )
+    pipeline.fit(X_train, y_train)
+    return pipeline
+
+
 def load_pima_real_model() -> Any:
-    """Load the scikit-learn Pipeline trained on real PIMA clinical data."""
+    """
+    Load the scikit-learn Pipeline trained on real PIMA clinical data.
+
+    Runs a 1-row smoke test after unpickling; if an incompatible scikit-learn version
+    (e.g., SimpleImputer missing `_fill_dtype` in sklearn 1.9+) raises an error,
+    transparently re-fits the pipeline from `data/pima_real_clinical.csv` (~0.2s).
+    """
     path = MODELS_DIR / "pima_real_clinical_model.pkl"
-    if not path.exists():
-        raise FileNotFoundError(f"Real clinical model not found: {path}")
-    return joblib.load(path)
+    smoke_df = pd.DataFrame(
+        [[1, 118.0, 72.0, 28.0, 110.0, 28.5, 0.42, 42]], columns=PIMA_FEATURES
+    )
+    if path.exists():
+        try:
+            pipeline = joblib.load(path)
+            _ = pipeline.predict_proba(smoke_df)
+            return pipeline
+        except Exception:
+            pass
+    return _fit_pima_real_pipeline()
 
 
 def validate_pima_clinical_inputs(values: dict[str, Any]) -> tuple[bool, list[str], dict[str, float]]:

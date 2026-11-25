@@ -187,6 +187,34 @@ def test_simulated_and_cross_cohort_evaluations():
     assert cc_df.iloc[1]["Specificity"] > cc_df.iloc[0]["Specificity"]
 
 
+def test_cross_version_pickle_fallback(monkeypatch):
+    import joblib
+    import pandas as pd
+    import src.t2d_pipeline as mod
+
+    class BrokenImputerEstimator:
+        def transform(self, _x):
+            raise AttributeError("'SimpleImputer' object has no attribute '_fill_dtype'")
+
+        def predict_proba(self, _x):
+            raise AttributeError("'SimpleImputer' object has no attribute '_fill_dtype'")
+
+    monkeypatch.setattr(joblib, "load", lambda _path: BrokenImputerEstimator())
+    pima_pipe = mod.load_pima_real_model()
+    prob_pima = pima_pipe.predict_proba(
+        pd.DataFrame([[1, 120.0, 70.0, 25.0, 100.0, 28.0, 0.4, 35]], columns=mod.PIMA_FEATURES)
+    )[0, 1]
+    assert 0.0 <= prob_pima <= 1.0
+
+    bundle = mod.load_model_bundle("realistic")
+    prob_hyb = bundle.model.predict_proba(
+        bundle.scaler.transform(
+            pd.DataFrame([[48, 27.5, 92.0, 0, 1, -8.66]], columns=mod.FEATURE_ORDER)
+        )
+    )[0, 1]
+    assert 0.0 <= prob_hyb <= 1.0
+
+
 def test_streamlit_all_pages_and_tracks_render():
     from streamlit.testing.v1 import AppTest
 

@@ -27,8 +27,10 @@ if str(APP_ROOT) not in sys.path:
 import src.t2d_pipeline as _t2d_pipeline
 
 # Ensure submodule updates are picked up cleanly if Streamlit hot-reloads app.py
-if not hasattr(_t2d_pipeline, "PIMA_FEATURE_LABELS") or not hasattr(
-    _t2d_pipeline, "load_simulated_cohort_summary"
+if (
+    not hasattr(_t2d_pipeline, "PIMA_FEATURE_LABELS")
+    or not hasattr(_t2d_pipeline, "load_simulated_cohort_summary")
+    or not hasattr(_t2d_pipeline, "_fit_pima_real_pipeline")
 ):
     _t2d_pipeline = importlib.reload(_t2d_pipeline)
 
